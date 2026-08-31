@@ -115,14 +115,16 @@ export default async function compatibilityRoutes(app: FastifyInstance) {
           data: {
             userId,
             partnerName,
-            // Partnerin doğum bilgisi saklanır; kullanıcı hesabını silerse cascade ile gider
+            // Partnerin doğum bilgisi saklanır; kullanıcı hesabını silerse cascade ile gider.
+            // Cast gerekli: Prisma'nın Json alan tipi index signature'ı olmayan
+            // TypeScript nesnelerini/interface'lerini doğrudan kabul etmez.
             partnerBirthData: {
               birthDate: partnerBirthDate,
               birthTime: partnerBirthTime ?? null,
               sunSign: partnerChart.sunSign,
               moonSign: partnerChart.moonSign,
-            },
-            scores,
+            } as any,
+            scores: scores as any,
             aiSummary,
           },
         });

@@ -98,9 +98,14 @@ export default async function astrologyRoutes(app: FastifyInstance) {
       sunSign: computed.sunSign,
       moonSign: computed.moonSign,
       risingSign: computed.risingSign,
-      planets: computed.planets ?? undefined,
-      houses: computed.houses ?? undefined,
-      aspects: computed.aspects ?? undefined,
+      // Prisma'nın Json alan tipi (InputJsonValue) index signature'ı olmayan
+      // TypeScript interface/dizilerini doğrudan kabul etmez — açık cast gerekir.
+      // Bu olmadan derleme HATA VERİR (Railway'de gerçek Prisma client'la
+      // yakalandı; bu sandbox'ta prisma generate ağ kısıtlaması yüzünden
+      // hiç tam çalışmadığı için bu hata daha önce görünmüyordu).
+      planets: (computed.planets ?? undefined) as any,
+      houses: (computed.houses ?? undefined) as any,
+      aspects: (computed.aspects ?? undefined) as any,
       // Dairesel harita görselleştirmesi için ekliptik dereceler
       degrees: {
         sun: computed.sunDegree,

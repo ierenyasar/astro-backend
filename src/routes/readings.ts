@@ -121,7 +121,15 @@ export default async function readingsRoutes(app: FastifyInstance) {
         }
 
         const reading = await tx.reading.create({
-          data: { userId, category, content, readingDate, modelVersion: "claude-sonnet-4-6" },
+          data: {
+            userId,
+            category,
+            // Cast gerekli: content {energy, insight, advice} şeklinde tipli bir nesne,
+            // Prisma'nın Json alanı index signature'ı olmadan bunu kabul etmez.
+            content: content as any,
+            readingDate,
+            modelVersion: "claude-sonnet-4-6",
+          },
         });
 
         return { status: "ok" as const, reading };
