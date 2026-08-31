@@ -1,0 +1,93 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Birim testler + typecheck: DB gerektirmez, her PR'da hızlı çalışır.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Birim testler (152 test)
+        run: npm test
+
+  # Entegrasyon testleri: gerçek PostgreSQL'e karşı çalışır (izolasyon,
+  # abonelik korunması, hesap silme gibi tek başına birim testle
+  # doğrulanamayan davranışları kontrol eder — bkz. tests/integration.test.ts).
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: astro
+          POSTGRES_PASSWORD: astro
+          POSTGRES_DB: astro_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://astro:astro@localhost:5432/astro_test
+      JWT_SECRET: ci-test-secret-not-for-production-use-only-in-pipeline
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Prisma client üret
+        run: npx prisma generate
+
+      - name: Şemayı uygula
+        run: npx prisma migrate deploy
+
+      - name: Entegrasyon testleri
+        run: npm run test:integration
+        # AI çağrısı yapan testler ANTHROPIC_API_KEY yoksa kendini atlar
+        # (bkz. integration.test.ts — "uyum puanları partnere göre değişir" testi).
+        # CI'da gerçek API anahtarı kullanmak istersen secrets.ANTHROPIC_API_KEY ekle:
+        # env:
+        #   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  # Dağıtım öncesi denetim: yalnızca gerçek deploy hedefine karşı anlamlıdır,
+  # bu yüzden yorum satırında bırakıldı — deploy job'ına eklemek için aç ve
+  # production ortam değişkenlerini secrets olarak tanımla.
+  #
+  # preflight:
+  #   needs: [test, integration]
+  #   runs-on: ubuntu-latest
+  #   environment: production
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with: { node-version: 20 }
+  #     - run: npm ci
+  #     - run: npm run preflight
+  #       env:
+  #         DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  #         JWT_SECRET: ${{ secrets.JWT_SECRET }}
+  #         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  #         # ... diğer production secret'ları

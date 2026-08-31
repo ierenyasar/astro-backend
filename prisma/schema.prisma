@@ -1,0 +1,280 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  /// Uygulama ilk açılışta e-posta istemeden hesap açar. Kullanıcı daha sonra
+  /// e-posta bağlarsa false olur ve hesap başka cihazdan erişilebilir hale gelir.
+  isAnonymous  Boolean  @default(true)
+  /// Bu tarihten ÖNCE üretilmiş JWT'ler geçersiz sayılır. Şifre sıfırlandığında
+  /// güncellenir; böylece çalınmış bir token şifre değişince işe yaramaz.
+  sessionsValidFrom DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  profile             Profile?
+  birthData            BirthData?
+  readings             Reading[]
+  chatSessions         ChatSession[]
+  favorites            Favorite[]
+  subscriptions        Subscription[]
+  notifications        Notification[]
+  compatibilityChecks  CompatibilityCheck[]
+  pushTokens           PushToken[]
+  analyticsEvents      AnalyticsEvent[]
+  passwordResetTokens  PasswordResetToken[]
+
+  @@map("users")
+}
+
+model Profile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName          String
+  gender             String?
+  relationshipStatus String?
+  focusArea          String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("profiles")
+}
+
+model BirthData {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  birthDate      DateTime
+  birthTime      String? // "HH:mm", null ise bilinmiyor
+  birthTimeKnown Boolean  @default(true)
+  birthCity      String
+  birthCountry   String?
+  latitude       Float?
+  longitude      Float?
+  timezone       String?
+  createdAt      DateTime @default(now())
+
+  chart AstrologyChart?
+
+  @@map("birth_data")
+}
+
+model AstrologyChart {
+  id          String    @id @default(uuid())
+  birthDataId String    @unique
+  birthData   BirthData @relation(fields: [birthDataId], references: [id], onDelete: Cascade)
+  sunSign     String
+  moonSign    String?
+  risingSign  String?
+  planets     Json? // { mercury: { sign, degree, house, retrograde }, ... }
+  degrees     Json? // { sun, moon, rising } — ekliptik dereceler (harita çizimi için)
+  houses      Json?
+  aspects     Json?
+  computedAt  DateTime  @default(now())
+
+  @@map("astrology_charts")
+}
+
+enum ReadingCategory {
+  daily
+  love
+  career
+  money
+  weekly
+  monthly
+  general
+}
+
+model Reading {
+  id           String          @id @default(uuid())
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category     ReadingCategory
+  content      Json // { energy, insight, advice } yapılandırılmış bölümler
+  readingDate  DateTime        @db.Date
+  modelVersion String?
+  createdAt    DateTime        @default(now())
+
+  favorites Favorite[]
+
+  @@unique([userId, category, readingDate])
+  @@map("readings")
+}
+
+model ChatSession {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  summary   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages ChatMessage[]
+
+  @@map("chat_sessions")
+}
+
+enum ChatRole {
+  user
+  assistant
+}
+
+model ChatMessage {
+  id            String      @id @default(uuid())
+  chatSessionId String
+  chatSession   ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  role          ChatRole
+  content       String
+  createdAt     DateTime    @default(now())
+
+  favorites Favorite[]
+
+  @@map("chat_messages")
+}
+
+model Favorite {
+  id            String       @id @default(uuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readingId     String?
+  reading       Reading?     @relation(fields: [readingId], references: [id], onDelete: Cascade)
+  chatMessageId String?
+  chatMessage   ChatMessage? @relation(fields: [chatMessageId], references: [id], onDelete: Cascade)
+  createdAt     DateTime     @default(now())
+
+  @@map("favorites")
+}
+
+enum SubscriptionStatus {
+  trial
+  active
+  expired
+  cancelled
+}
+
+enum SubscriptionProvider {
+  apple
+  google
+  stripe
+}
+
+model Subscription {
+  id                    String               @id @default(uuid())
+  userId                String
+  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status                SubscriptionStatus
+  provider              SubscriptionProvider
+  providerTransactionId String?
+  currentPeriodEnd      DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@map("subscriptions")
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String
+  sentAt    DateTime?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@map("notifications")
+}
+
+model CompatibilityCheck {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partnerName     String
+  partnerBirthData Json
+  scores          Json
+  aiSummary       String?
+  createdAt       DateTime @default(now())
+
+  @@map("compatibility_checks")
+}
+
+/// Şifre sıfırlama token'ları.
+/// Token'ın KENDİSİ değil, SHA-256 özeti saklanır — veritabanı sızarsa
+/// token'lar kullanılamaz hale gelir.
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+/// Analytics eventleri. Kişisel veri (doğum bilgisi, isim, mesaj içeriği) saklanmaz —
+/// bkz. src/lib/analytics-events.ts içindeki sanitizeProperties.
+model AnalyticsEvent {
+  id         String   @id @default(uuid())
+  /// Kullanıcı silinirse eventler anonim kalır (userId null olur), metrikler bozulmaz
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name       String
+  properties Json?
+  platform   String?
+  appVersion String?
+  createdAt  DateTime @default(now())
+
+  @@index([name, createdAt])
+  @@index([userId])
+  @@map("analytics_events")
+}
+
+/// Cihaz push token'ları. Bir kullanıcının birden fazla cihazı olabilir.
+model PushToken {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique
+  platform   String? // ios | android
+  /// Kullanıcının yerel saat dilimi — bildirimi doğru saatte göndermek için
+  timezone   String?
+  /// Bildirimlerin gönderileceği yerel saat (0-23). Varsayılan sabah 9.
+  hourLocal  Int      @default(9)
+  enabled    Boolean  @default(true)
+  /// Üst üste başarısız gönderim sayısı; eşiği aşınca token devre dışı bırakılır
+  failCount  Int      @default(0)
+  lastSentAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+  @@map("push_tokens")
+}
+
+/// Geocoding sonuçları cache'i. latitude/longitude null ise "bulunamadı" sonucu
+/// cache'lenmiş demektir — aynı hatalı sorgu için tekrar tekrar dış servise gidilmez.
+model GeocodeCache {
+  id        String   @id @default(uuid())
+  query     String   @unique
+  latitude  Float?
+  longitude Float?
+  timezone  String?
+  label     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("geocode_cache")
+}

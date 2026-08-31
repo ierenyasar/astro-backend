@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Astro — Şifre Sıfırlama</title>
+<style>
+  :root{
+    --void:#07060F; --panel:#100E22; --line:rgba(230,224,255,0.10);
+    --violet:#7C5CFC; --violetDeep:#4B2FA6; --gold:#C9A15F;
+    --text:#F3F1FA; --muted:#9993B8; --faint:#6A6486; --danger:#E5A3A3;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    padding:24px; background:radial-gradient(120% 80% at 50% 0%, #1A1638 0%, var(--void) 60%);
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--text);
+  }
+  .card{
+    width:100%; max-width:400px; background:var(--panel); border:1px solid var(--line);
+    border-radius:20px; padding:32px 28px;
+  }
+  .brand{ font-size:22px; margin:0 0 6px; letter-spacing:0.5px; }
+  h1{ font-size:19px; margin:0 0 8px; font-weight:600; }
+  p.sub{ font-size:14px; color:var(--muted); line-height:1.55; margin:0 0 24px; }
+  label{ display:block; font-size:13px; color:var(--muted); margin-bottom:7px; }
+  input{
+    width:100%; padding:13px 14px; font-size:16px; color:var(--text);
+    background:rgba(255,255,255,0.04); border:1px solid var(--line);
+    border-radius:12px; outline:none; margin-bottom:6px;
+  }
+  input:focus{ border-color:var(--violet); }
+  .hint{ font-size:12px; color:var(--faint); margin:0 0 18px; }
+  button{
+    width:100%; padding:14px; font-size:15px; font-weight:600; color:#fff;
+    background:linear-gradient(135deg,var(--violet),var(--violetDeep));
+    border:none; border-radius:14px; cursor:pointer;
+  }
+  button:disabled{ opacity:0.45; cursor:not-allowed; }
+  .msg{ font-size:13px; line-height:1.55; padding:13px 14px; border-radius:12px; margin-bottom:18px; }
+  .msg.error{ color:var(--danger); background:rgba(229,163,163,0.08); border:1px solid rgba(229,163,163,0.3); }
+  .msg.ok{ color:var(--text); background:rgba(124,92,252,0.10); border:1px solid rgba(124,92,252,0.35); }
+  .hidden{ display:none; }
+  .foot{ font-size:12px; color:var(--faint); text-align:center; margin:22px 0 0; line-height:1.5; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <p class="brand">✦ Astro</p>
+
+    <!-- Form -->
+    <div id="formView">
+      <h1>Yeni şifre belirle</h1>
+      <p class="sub">Hesabına yeni bir şifre seç. Şifreni değiştirdiğinde diğer cihazlardaki oturumların kapanır.</p>
+
+      <div id="error" class="msg error hidden"></div>
+
+      <label for="password">Yeni şifre</label>
+      <input id="password" type="password" autocomplete="new-password" placeholder="En az 8 karakter" />
+      <p class="hint">En az 8 karakter olmalı.</p>
+
+      <label for="confirm">Yeni şifre (tekrar)</label>
+      <input id="confirm" type="password" autocomplete="new-password" placeholder="Şifreyi tekrar gir" />
+      <p class="hint" id="matchHint"></p>
+
+      <button id="submit" disabled>Şifremi Değiştir</button>
+    </div>
+
+    <!-- Başarı -->
+    <div id="successView" class="hidden">
+      <h1>Şifren değiştirildi</h1>
+      <div class="msg ok">
+        Artık yeni şifrenle giriş yapabilirsin. Astro uygulamasını açıp
+        <strong>Profil → Hesabım</strong> bölümünden giriş yap.
+      </div>
+      <p class="sub">Bu sayfayı kapatabilirsin.</p>
+    </div>
+
+    <!-- Geçersiz bağlantı -->
+    <div id="invalidView" class="hidden">
+      <h1>Bağlantı geçersiz</h1>
+      <div class="msg error" id="invalidText">
+        Bu şifre sıfırlama bağlantısı geçersiz veya süresi dolmuş.
+      </div>
+      <p class="sub">Uygulamadan yeni bir sıfırlama bağlantısı talep edebilirsin.</p>
+    </div>
+
+    <p class="foot">Bu isteği sen yapmadıysan bu sayfayı kapatabilirsin; şifren değişmez.</p>
+  </div>
+
+<script>
+(function () {
+  // Backend adresi. Sayfa backend tarafından sunuluyorsa aynı origin kullanılır.
+  var API_BASE = window.location.origin;
+
+  var params = new URLSearchParams(window.location.search);
+  var token = params.get("token");
+
+  var formView = document.getElementById("formView");
+  var successView = document.getElementById("successView");
+  var invalidView = document.getElementById("invalidView");
+  var errorBox = document.getElementById("error");
+  var password = document.getElementById("password");
+  var confirm = document.getElementById("confirm");
+  var matchHint = document.getElementById("matchHint");
+  var submit = document.getElementById("submit");
+
+  function show(view) {
+    formView.classList.add("hidden");
+    successView.classList.add("hidden");
+    invalidView.classList.add("hidden");
+    view.classList.remove("hidden");
+  }
+
+  function showError(text) {
+    errorBox.textContent = text;
+    errorBox.classList.remove("hidden");
+  }
+
+  // Token yoksa formu hiç gösterme
+  if (!token) {
+    show(invalidView);
+    return;
+  }
+
+  function validate() {
+    var p = password.value;
+    var c = confirm.value;
+    var longEnough = p.length >= 8;
+    var matches = p === c;
+
+    if (c.length > 0 && !matches) {
+      matchHint.textContent = "Şifreler eşleşmiyor.";
+      matchHint.style.color = "var(--danger)";
+    } else {
+      matchHint.textContent = "";
+    }
+
+    submit.disabled = !(longEnough && matches);
+  }
+
+  password.addEventListener("input", validate);
+  confirm.addEventListener("input", validate);
+
+  submit.addEventListener("click", async function () {
+    submit.disabled = true;
+    submit.textContent = "Değiştiriliyor…";
+    errorBox.classList.add("hidden");
+
+    try {
+      var res = await fetch(API_BASE + "/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token, password: password.value }),
+      });
+      var data = await res.json().catch(function () { return {}; });
+
+      if (res.ok) {
+        // Token'ı adres çubuğundan temizle — geçmişte/paylaşımda kalmasın
+        history.replaceState(null, "", window.location.pathname);
+        show(successView);
+        return;
+      }
+
+      // Süresi dolmuş/kullanılmış token: formu göstermeye devam etmenin anlamı yok
+      if (res.status === 400 && /geçersiz|süresi/i.test(data.error || "")) {
+        document.getElementById("invalidText").textContent =
+          data.error || "Bu bağlantı geçersiz veya süresi dolmuş.";
+        show(invalidView);
+        return;
+      }
+
+      if (res.status === 429) {
+        showError("Çok fazla deneme yapıldı. Lütfen biraz bekleyip tekrar dene.");
+      } else {
+        showError(data.error || "Şifre değiştirilemedi. Lütfen tekrar dene.");
+      }
+    } catch (e) {
+      showError("Bağlantı kurulamadı. İnternetini kontrol edip tekrar dene.");
+    } finally {
+      submit.disabled = false;
+      submit.textContent = "Şifremi Değiştir";
+      validate();
+    }
+  });
+
+  validate();
+})();
+</script>
+</body>
+</html>
