@@ -26,7 +26,6 @@
     "bcryptjs": "^2.4.3",
     "circular-natal-horoscope-js": "^1.1.0",
     "dotenv": "^16.4.5",
-    "expo-server-sdk": "^7.2.0",
     "fastify": "^5.0.0",
     "google-auth-library": "^11.0.2",
     "jsonwebtoken": "^9.0.3",

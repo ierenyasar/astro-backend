@@ -1,5 +1,3 @@
-import { Expo, ExpoPushMessage, ExpoPushTicket } from "expo-server-sdk";
-
 /**
  * Prisma gecikmeli (lazy) yüklenir: bu modüldeki zamanlama yardımcıları
  * (isLocalHourNow, alreadySentToday, pickDailyMessage) tamamen saf fonksiyonlardır
@@ -13,6 +11,16 @@ async function db() {
 /**
  * Expo Push API üzerinden bildirim gönderimi.
  *
+ * `expo-server-sdk` paketi KASITLI OLARAK kullanılmıyor: o paket ES Module olarak
+ * yayınlanmış, backend'imiz ise CommonJS'e derleniyor — bu ikisi `require()` ile
+ * bir arada çalışmıyor (Node "ERR_REQUIRE_ESM" hatası verir). Bu hata sadece
+ * gerçek bir sunucuda çalıştırıldığında ortaya çıkar; TypeScript tip kontrolü
+ * bunu yakalayamaz çünkü bir çalışma zamanı/modül sistemi sorunudur.
+ *
+ * Expo'nun push API'si basit bir REST endpoint'i olduğu için SDK'ya hiç ihtiyaç
+ * yok — doğrudan fetch() ile konuşuyoruz. Bu hem ESM sorununu ortadan kaldırıyor
+ * hem de bir bağımlılığı azaltıyor.
+ *
  * Tasarım notları:
  * - Geçersiz hale gelen token'lar (uygulama silinmiş, izin kaldırılmış) otomatik
  *   devre dışı bırakılır. Aksi halde ölü token'lara sürekli gönderim denenir.
@@ -21,12 +29,9 @@ async function db() {
  * - Aynı kullanıcıya günde birden fazla hatırlatma gönderilmez (spam koruması, madde 17).
  */
 
-const expo = new Expo({
-  // accessToken opsiyonel; Expo hesabında "enhanced security" açıksa gerekir
-  accessToken: process.env.EXPO_ACCESS_TOKEN,
-});
-
+const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const MAX_FAILURES = 3;
+const CHUNK_SIZE = 100; // Expo'nun tek istekte kabul ettiği azami mesaj sayısı
 
 /** Bildirim metinleri — tekrar etmemesi için rastgele seçilir (madde 17). */
 const DAILY_MESSAGES = [
@@ -38,6 +43,20 @@ const DAILY_MESSAGES = [
 
 export function pickDailyMessage() {
   return DAILY_MESSAGES[Math.floor(Math.random() * DAILY_MESSAGES.length)];
+}
+
+/** Expo push token biçimini doğrular — expo-server-sdk'nin isExpoPushToken'ının eşdeğeri. */
+export function isExpoPushToken(token: string): boolean {
+  return (
+    typeof token === "string" &&
+    (/^ExponentPushToken\[.+\]$/.test(token) || /^ExpoPushToken\[.+\]$/.test(token))
+  );
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
 }
 
 /** Bir kullanıcının aktif cihaz token'larını getirir. */
@@ -52,6 +71,50 @@ export interface PushPayload {
   title: string;
   body: string;
   data?: Record<string, unknown>;
+}
+
+interface ExpoTicket {
+  status: "ok" | "error";
+  id?: string;
+  message?: string;
+  details?: { error?: string };
+}
+
+/** Expo'nun push API'sine tek bir istekte (en fazla 100 mesaj) gönderim yapar. */
+async function sendChunk(
+  tokens: { id: string; token: string }[],
+  payload: PushPayload
+): Promise<ExpoTicket[]> {
+  const messages = tokens.map((t) => ({
+    to: t.token,
+    sound: "default",
+    title: payload.title,
+    body: payload.body,
+    data: payload.data ?? {},
+  }));
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "Accept-Encoding": "gzip, deflate",
+  };
+  // accessToken opsiyonel; Expo hesabında "enhanced security" açıksa gerekir
+  if (process.env.EXPO_ACCESS_TOKEN) {
+    headers.Authorization = `Bearer ${process.env.EXPO_ACCESS_TOKEN}`;
+  }
+
+  const res = await fetch(EXPO_PUSH_URL, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(messages),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Expo push API hatası: ${res.status}`);
+  }
+
+  const json = (await res.json()) as { data?: ExpoTicket[]; errors?: unknown[] };
+  return json.data ?? tokens.map(() => ({ status: "error", message: "unexpected response" }));
 }
 
 /**
@@ -74,15 +137,12 @@ export async function sendPushToUser(userId: string, payload: PushPayload) {
   return sendToTokens(tokens, payload);
 }
 
-async function sendToTokens(
-  tokens: { id: string; token: string }[],
-  payload: PushPayload
-) {
+async function sendToTokens(tokens: { id: string; token: string }[], payload: PushPayload) {
   const prisma = await db();
-  const valid = tokens.filter((t) => Expo.isExpoPushToken(t.token));
+  const valid = tokens.filter((t) => isExpoPushToken(t.token));
 
   // Format olarak geçersiz token'ları hemen devre dışı bırak
-  const invalidIds = tokens.filter((t) => !Expo.isExpoPushToken(t.token)).map((t) => t.id);
+  const invalidIds = tokens.filter((t) => !isExpoPushToken(t.token)).map((t) => t.id);
   if (invalidIds.length) {
     await prisma.pushToken.updateMany({
       where: { id: { in: invalidIds } },
@@ -92,31 +152,21 @@ async function sendToTokens(
 
   if (!valid.length) return { sent: 0, disabled: invalidIds.length };
 
-  const messages: ExpoPushMessage[] = valid.map((t) => ({
-    to: t.token,
-    sound: "default",
-    title: payload.title,
-    body: payload.body,
-    data: payload.data ?? {},
-  }));
-
-  const chunks = expo.chunkPushNotifications(messages);
-  const tickets: ExpoPushTicket[] = [];
+  const chunks = chunk(valid, CHUNK_SIZE);
+  const tickets: ExpoTicket[] = [];
   const chunkTokenIds: string[][] = [];
 
-  let offset = 0;
-  for (const chunk of chunks) {
-    const ids = valid.slice(offset, offset + chunk.length).map((t) => t.id);
-    offset += chunk.length;
+  for (const tokenChunk of chunks) {
+    const ids = tokenChunk.map((t) => t.id);
     try {
-      const res = await expo.sendPushNotificationsAsync(chunk);
+      const res = await sendChunk(tokenChunk, payload);
       tickets.push(...res);
       chunkTokenIds.push(ids);
     } catch (err) {
       // Ağ hatası — token'ı suçlama, bir sonraki turda tekrar denenecek
       console.error("Push chunk gönderilemedi:", err);
       chunkTokenIds.push(ids);
-      tickets.push(...ids.map(() => ({ status: "error" as const, message: "network" } as any)));
+      tickets.push(...ids.map(() => ({ status: "error" as const, message: "network" })));
     }
   }
 
@@ -126,7 +176,7 @@ async function sendToTokens(
   let sent = 0;
 
   for (let i = 0; i < tickets.length; i++) {
-    const ticket = tickets[i] as any;
+    const ticket = tickets[i];
     const tokenId = flatIds[i];
     if (!tokenId) continue;
 

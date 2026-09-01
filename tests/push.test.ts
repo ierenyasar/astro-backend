@@ -1,4 +1,4 @@
-import { isLocalHourNow, alreadySentToday, pickDailyMessage } from "../src/lib/push";
+import { isLocalHourNow, alreadySentToday, pickDailyMessage, isExpoPushToken } from "../src/lib/push";
 
 let pass = 0,
   fail = 0;
@@ -101,6 +101,24 @@ t("Her mesajda başlık ve gövde dolu", () => {
     const m = pickDailyMessage();
     assert(!!m.title && !!m.body, "boş bildirim metni");
   }
+});
+
+/* ---------------- token format doğrulama (expo-server-sdk'siz) ---------------- */
+
+t("Geçerli ExponentPushToken kabul edilir", () => {
+  assert(isExpoPushToken("ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]") === true, "reddedildi");
+});
+
+t("Geçerli ExpoPushToken kabul edilir", () => {
+  assert(isExpoPushToken("ExpoPushToken[xxxxxxxxxxxxxxxxxxxxxx]") === true, "reddedildi");
+});
+
+t("Rastgele string reddedilir", () => {
+  assert(isExpoPushToken("bunun-bir-anlami-yok") === false, "kabul edildi");
+});
+
+t("Boş string reddedilir", () => {
+  assert(isExpoPushToken("") === false, "kabul edildi");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);
