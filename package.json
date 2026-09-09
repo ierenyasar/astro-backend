@@ -11,7 +11,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "typecheck": "tsc --noEmit",
-    "test": "tsx tests/astrology.test.ts && tsx tests/webhook.test.ts && tsx tests/limits.test.ts && tsx tests/push.test.ts && tsx tests/analytics.test.ts && tsx tests/safety.test.ts && tsx tests/password-reset.test.ts && tsx tests/reset-page.test.ts && tsx tests/analytics-sync.test.ts && tsx tests/input-bounds.test.ts && tsx tests/rate-limits.test.ts && tsx tests/coffee-fortune.test.ts && tsx tests/dream-analysis.test.ts && tsx tests/ai-provider-parity.test.ts",
+    "test": "tsx tests/astrology.test.ts && tsx tests/webhook.test.ts && tsx tests/limits.test.ts && tsx tests/push.test.ts && tsx tests/analytics.test.ts && tsx tests/safety.test.ts && tsx tests/password-reset.test.ts && tsx tests/reset-page.test.ts && tsx tests/analytics-sync.test.ts && tsx tests/input-bounds.test.ts && tsx tests/rate-limits.test.ts && tsx tests/coffee-fortune.test.ts && tsx tests/dream-analysis.test.ts && tsx tests/ai-provider-parity.test.ts && tsx tests/build-deps.test.ts",
     "test:integration": "tsx tests/integration.test.ts",
     "preflight": "tsx scripts/preflight.ts"
   },
@@ -22,21 +22,21 @@
     "@fastify/rate-limit": "^10.0.0",
     "@fastify/static": "^10.1.3",
     "@prisma/client": "^5.20.0",
+    "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^20.14.0",
     "bcryptjs": "^2.4.3",
     "circular-natal-horoscope-js": "^1.1.0",
     "dotenv": "^16.4.5",
     "fastify": "^5.0.0",
     "google-auth-library": "^11.0.2",
     "jsonwebtoken": "^9.0.3",
+    "prisma": "^5.20.0",
+    "typescript": "^5.6.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
-    "@types/node": "^20.14.0",
-    "prisma": "^5.20.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "tsx": "^4.19.0"
   },
   "files": [
     "dist",
