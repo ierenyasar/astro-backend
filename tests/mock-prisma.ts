@@ -135,6 +135,8 @@ export const mockPrisma = {
   favorite: new Table(),
   subscription: new Table(),
   compatibilityCheck: new Table(),
+  coffeeFortune: new Table(),
+  dreamAnalysis: new Table(),
   geocodeCache: new Table(),
   resetAll() {
     for (const v of Object.values(this)) {

@@ -3,7 +3,7 @@ import { installPrismaMock, mockPrisma } from "./mock-prisma";
 // limits.ts'i yüklemeden ÖNCE prisma mock'unu kur
 installPrismaMock();
 
-const { checkReadingQuota, checkChatQuota, checkCompatibilityQuota, isPremium, FREE_LIMITS, PREMIUM_LIMITS } = require("../src/lib/limits");
+const { checkReadingQuota, checkChatQuota, checkCompatibilityQuota, checkCoffeeFortuneQuota, checkDreamAnalysisQuota, isPremium, FREE_LIMITS, PREMIUM_LIMITS } = require("../src/lib/limits");
 
 let pass = 0,
   fail = 0;
@@ -238,6 +238,149 @@ async function main() {
       });
     }
     const q = await checkCompatibilityQuota("u1");
+    assert(q.allowed === true, "dünkü analizler bugünü bloklamış");
+  });
+
+  /* ---------------- kahve falı kotası ---------------- */
+
+  await t("Free kullanıcı günde 1 kahve falı hakkına sahip", async () => {
+    const q = await checkCoffeeFortuneQuota("u1");
+    assert(q.allowed === true, "free kullanıcı hiç izin alamadı");
+    assert(q.limit === FREE_LIMITS.coffeeFortunePerDay, `limit ${q.limit}, ${FREE_LIMITS.coffeeFortunePerDay} olmalı`);
+  });
+
+  await t("Free kullanıcı günlük hakkını kullanınca ikinci fal engellenir", async () => {
+    await mockPrisma.coffeeFortune.create({
+      data: { userId: "u1", interpretation: { valid: true } },
+    });
+    const q = await checkCoffeeFortuneQuota("u1");
+    assert(q.allowed === false, "free kullanıcı ikinci falı da alabildi");
+  });
+
+  await t("Premium kullanıcı günlük tavana kadar fal baktırabilir", async () => {
+    await mockPrisma.subscription.create({
+      data: { userId: "u1", status: "active", currentPeriodEnd: new Date(Date.now() + 86400000) },
+    });
+    const q = await checkCoffeeFortuneQuota("u1");
+    assert(q.allowed === true, "premium engellendi");
+    assert(q.limit === PREMIUM_LIMITS.coffeeFortunePerDay, "limit yanlış");
+  });
+
+  await t("Premium bile kahve falında sınırsız DEĞİL (en maliyetli özellik)", async () => {
+    await mockPrisma.subscription.create({
+      data: { userId: "u1", status: "active", currentPeriodEnd: new Date(Date.now() + 86400000) },
+    });
+    for (let i = 0; i < PREMIUM_LIMITS.coffeeFortunePerDay; i++) {
+      await mockPrisma.coffeeFortune.create({
+        data: { userId: "u1", interpretation: { valid: true } },
+      });
+    }
+    const q = await checkCoffeeFortuneQuota("u1");
+    assert(q.allowed === false, "premium tavanı yok — maliyet riski");
+  });
+
+  await t("Geçersiz (fincan tanınmayan) denemeler de kotadan düşer", async () => {
+    // Bilinçli tasarım: AI çağrısı zaten yapıldı, maliyeti oluştu — geçersiz
+    // sonuç bile kotayı korumalı, aksi halde sınırsız deneme ile atlatılabilir.
+    await mockPrisma.subscription.create({
+      data: { userId: "u1", status: "active", currentPeriodEnd: new Date(Date.now() + 86400000) },
+    });
+    await mockPrisma.coffeeFortune.create({
+      data: { userId: "u1", interpretation: { valid: false, reason: "bulanık" } },
+    });
+    const q = await checkCoffeeFortuneQuota("u1");
+    assert(q.used === 1, `used ${q.used}, 1 olmalı — geçersiz deneme sayılmamış`);
+  });
+
+  await t("BAŞKA kullanıcının kahve falları kotayı etkilemez", async () => {
+    await mockPrisma.subscription.create({
+      data: { userId: "u1", status: "active", currentPeriodEnd: new Date(Date.now() + 86400000) },
+    });
+    for (let i = 0; i < 5; i++) {
+      await mockPrisma.coffeeFortune.create({
+        data: { userId: "u2", interpretation: { valid: true } },
+      });
+    }
+    const q = await checkCoffeeFortuneQuota("u1");
+    assert(q.used === 0, `used ${q.used} olmamalı`);
+  });
+
+  await t("Dünkü kahve falları bugünün kotasını doldurmaz", async () => {
+    await mockPrisma.subscription.create({
+      data: { userId: "u1", status: "active", currentPeriodEnd: new Date(Date.now() + 86400000) },
+    });
+    const yesterday = new Date(Date.now() - 86400000);
+    for (let i = 0; i < 5; i++) {
+      await mockPrisma.coffeeFortune.create({
+        data: { userId: "u1", interpretation: { valid: true }, createdAt: yesterday },
+      });
+    }
+    const q = await checkCoffeeFortuneQuota("u1");
+    assert(q.allowed === true, "dünkü fallar bugünü bloklamış");
+  });
+
+  /* ---------------- rüya analizi kotası ---------------- */
+
+  await t("Free kullanıcı günde 1 rüya analizi hakkına sahip", async () => {
+    const q = await checkDreamAnalysisQuota("u1");
+    assert(q.allowed === true, "free kullanıcı hiç izin alamadı");
+    assert(q.limit === FREE_LIMITS.dreamAnalysisPerDay, `limit ${q.limit}, ${FREE_LIMITS.dreamAnalysisPerDay} olmalı`);
+  });
+
+  await t("Free kullanıcı günlük hakkını kullanınca ikinci analiz engellenir", async () => {
+    await mockPrisma.dreamAnalysis.create({
+      data: { userId: "u1", dreamText: "test", interpretation: {} },
+    });
+    const q = await checkDreamAnalysisQuota("u1");
+    assert(q.allowed === false, "free kullanıcı ikinci analizi de alabildi");
+  });
+
+  await t("Premium kullanıcı günlük tavana kadar rüya yorumlatabilir", async () => {
+    await mockPrisma.subscription.create({
+      data: { userId: "u1", status: "active", currentPeriodEnd: new Date(Date.now() + 86400000) },
+    });
+    const q = await checkDreamAnalysisQuota("u1");
+    assert(q.allowed === true, "premium engellendi");
+    assert(q.limit === PREMIUM_LIMITS.dreamAnalysisPerDay, "limit yanlış");
+  });
+
+  await t("Premium bile rüya analizinde sınırsız DEĞİL", async () => {
+    await mockPrisma.subscription.create({
+      data: { userId: "u1", status: "active", currentPeriodEnd: new Date(Date.now() + 86400000) },
+    });
+    for (let i = 0; i < PREMIUM_LIMITS.dreamAnalysisPerDay; i++) {
+      await mockPrisma.dreamAnalysis.create({
+        data: { userId: "u1", dreamText: `rüya ${i}`, interpretation: {} },
+      });
+    }
+    const q = await checkDreamAnalysisQuota("u1");
+    assert(q.allowed === false, "premium tavanı yok — maliyet riski");
+  });
+
+  await t("BAŞKA kullanıcının rüya analizleri kotayı etkilemez", async () => {
+    await mockPrisma.subscription.create({
+      data: { userId: "u1", status: "active", currentPeriodEnd: new Date(Date.now() + 86400000) },
+    });
+    for (let i = 0; i < 5; i++) {
+      await mockPrisma.dreamAnalysis.create({
+        data: { userId: "u2", dreamText: `rüya ${i}`, interpretation: {} },
+      });
+    }
+    const q = await checkDreamAnalysisQuota("u1");
+    assert(q.used === 0, `used ${q.used} olmamalı`);
+  });
+
+  await t("Dünkü rüya analizleri bugünün kotasını doldurmaz", async () => {
+    await mockPrisma.subscription.create({
+      data: { userId: "u1", status: "active", currentPeriodEnd: new Date(Date.now() + 86400000) },
+    });
+    const yesterday = new Date(Date.now() - 86400000);
+    for (let i = 0; i < 10; i++) {
+      await mockPrisma.dreamAnalysis.create({
+        data: { userId: "u1", dreamText: `rüya ${i}`, interpretation: {}, createdAt: yesterday },
+      });
+    }
+    const q = await checkDreamAnalysisQuota("u1");
     assert(q.allowed === true, "dünkü analizler bugünü bloklamış");
   });
 

@@ -53,6 +53,8 @@ const notificationsSrc = read("notifications.ts");
 const chatSrc = read("chat.ts");
 const authSrc = read("auth.ts");
 const subscriptionSrc = read("subscription.ts");
+const dreamSrc = read("dream.ts");
+const coffeeSrc = read("coffee.ts");
 
 /* ---------------- AI prompt'una gömülen alanlar (en kritik) ---------------- */
 
@@ -140,6 +142,46 @@ t("254 karakterden uzun e-posta gerçekten reddediliyor", () => {
   const schema = z.string().email().max(254);
   const huge = "a".repeat(300) + "@ornek.com";
   assert(!schema.safeParse(huge).success, "uzun e-posta kabul edildi");
+});
+
+
+/* ---------------- yeni özellikler (kahve falı / rüya analizi) ---------------- */
+
+t("dreamText sınırlı (her AI prompt'una gömülür)", () => {
+  // NOT: dreamText çok satırlı bir zod zinciri kullandığı için hasMaxBound()
+  // yardımcısı bunu yakalayamaz — alanı ve sınırını ayrı ayrı doğruluyoruz.
+  assert(/dreamText:\s*z\b/.test(dreamSrc), "dreamText alanı bulunamadı");
+  assert(
+    /DREAM_TEXT_MAX_LENGTH\s*=\s*\d+/.test(dreamSrc),
+    "dreamText için uzunluk sınırı tanımlı değil — AI maliyet riski"
+  );
+  assert(/\.max\(/.test(dreamSrc), "dreamText şemasında .max() kullanılmıyor");
+});
+
+t("Kahve falı görselleri sınırlı (adet + boyut)", () => {
+  assert(
+    /MAX_IMAGE_BASE64_LENGTH\s*=\s*\d+/.test(coffeeSrc),
+    "görsel başına boyut sınırı yok"
+  );
+  assert(/MAX_PHOTOS\s*=\s*\d+/.test(coffeeSrc), "fotoğraf adedi sınırı yok");
+});
+
+t("Kullanıcı metni doğrudan DB'ye yazılan alanlar temizleniyor", () => {
+  // PostgreSQL text alanı null byte kabul etmez — temizlenmezse AI çağrısı
+  // yapıldıktan SONRA yazımda 500 alınır (para harcanmış, kota gitmiş olur).
+  //
+  // DİKKAT: Sadece "\u0000" aramak YETMEZ — bu ifade koddaki açıklama
+  // yorumunda da geçiyor, yani kod silinse bile test geçerdi (yanlış-geçen test).
+  // Bu yüzden .transform() İÇİNDEKİ gerçek .replace() çağrısını arıyoruz.
+  const codeOnly = dreamSrc
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("*") && !l.trim().startsWith("//"))
+    .join("\n");
+  assert(
+    /\.transform\([\s\S]{0,150}\.replace\(/.test(codeOnly),
+    "dreamText şemasında kontrol karakteri temizleyen transform yok"
+  );
+  assert(/\.trim\(\)/.test(codeOnly), "dreamText'te trim() yok — boşluk-only girdi kotayı yakar");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

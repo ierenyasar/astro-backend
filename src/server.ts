@@ -10,6 +10,8 @@ import authRoutes from "./routes/auth";
 import userRoutes from "./routes/user";
 import astrologyRoutes from "./routes/astrology";
 import readingsRoutes from "./routes/readings";
+import coffeeRoutes from "./routes/coffee";
+import dreamRoutes from "./routes/dream";
 import chatRoutes from "./routes/chat";
 import compatibilityRoutes from "./routes/compatibility";
 import subscriptionRoutes from "./routes/subscription";
@@ -60,6 +62,8 @@ async function main() {
   await app.register(userRoutes);
   await app.register(astrologyRoutes);
   await app.register(readingsRoutes);
+  await app.register(coffeeRoutes);
+  await app.register(dreamRoutes);
   await app.register(chatRoutes);
   await app.register(compatibilityRoutes);
   await app.register(subscriptionRoutes);

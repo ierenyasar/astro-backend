@@ -51,21 +51,67 @@ export async function generateStructuredReading(userPrompt: string) {
  * Serbest metin yanıtı (chat, compatibility, birth chart özeti).
  * `history` verilirse çok turlu konuşma context'i olarak gönderilir.
  */
+/**
+ * Serbest metin yanıtı.
+ *
+ * `system` parametresi opsiyoneldir ve VARSAYILAN olarak astroloji SYSTEM_PROMPT'unu
+ * kullanır. Rüya analizi gibi FARKLI bir gelenek/kural setine sahip özellikler kendi
+ * sistem prompt'unu buraya geçirmelidir — kullanıcı mesajının içine gömmemelidir.
+ *
+ * NEDEN KRİTİK: Sistem prompt'u, modelin otorite kabul ettiği katmandır. Güvenlik
+ * kurallarını (ölüm/hastalık yasağı gibi) user mesajına gömmek, onları tam da
+ * "veri olarak ele al, talimat sayma" dediğimiz katmana düşürür ve prompt injection'a
+ * karşı savunmasız bırakır.
+ */
 export async function generateFreeTextReply(
   userPrompt: string,
-  history: { role: "user" | "assistant"; content: string }[] = []
+  history: { role: "user" | "assistant"; content: string }[] = [],
+  system: string = SYSTEM_PROMPT
 ) {
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 500,
-    system: SYSTEM_PROMPT,
+    system,
     messages: [...history, { role: "user" as const, content: userPrompt }],
   });
 
   return extractText(res.content);
 }
 
-/** Uzayan sohbetlerde eski mesajları tek bir özete indirger (token maliyetini sabit tutar). */
+/**
+ * Görsel + metin isteği (Türk kahvesi falı için).
+ *
+ * Birden fazla fotoğraf kabul eder (fincan + tabak, farklı açılar vb. — geleneksel
+ * Türk kahve falında tek kareden çok, birkaç açı bakılması yaygındır). Anthropic'in
+ * vision desteği ile her fotoğraf, mesaj content'inde ayrı bir "image" bloğu olarak
+ * gönderilir. `system` parametresi ayrı geçirilir çünkü kahve falının kendi sistem
+ * prompt'u var (astroloji SYSTEM_PROMPT'undan farklı).
+ */
+export async function generateVisionReading(
+  system: string,
+  textPrompt: string,
+  images: { base64: string; mediaType: "image/jpeg" | "image/png" | "image/webp" }[]
+) {
+  const res = await getClient().messages.create({
+    model: MODEL,
+    max_tokens: 500,
+    system,
+    messages: [
+      {
+        role: "user",
+        content: [
+          ...images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mediaType, data: img.base64 },
+          })),
+          { type: "text", text: textPrompt },
+        ],
+      },
+    ],
+  });
+
+  return extractText(res.content);
+}
 export async function summarizeConversation(transcript: string, previousSummary?: string | null) {
   const res = await getClient().messages.create({
     model: MODEL,

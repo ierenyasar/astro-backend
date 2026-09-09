@@ -11,7 +11,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "typecheck": "tsc --noEmit",
-    "test": "tsx tests/astrology.test.ts && tsx tests/webhook.test.ts && tsx tests/limits.test.ts && tsx tests/push.test.ts && tsx tests/analytics.test.ts && tsx tests/safety.test.ts && tsx tests/password-reset.test.ts && tsx tests/reset-page.test.ts && tsx tests/analytics-sync.test.ts && tsx tests/input-bounds.test.ts && tsx tests/rate-limits.test.ts",
+    "test": "tsx tests/astrology.test.ts && tsx tests/webhook.test.ts && tsx tests/limits.test.ts && tsx tests/push.test.ts && tsx tests/analytics.test.ts && tsx tests/safety.test.ts && tsx tests/password-reset.test.ts && tsx tests/reset-page.test.ts && tsx tests/analytics-sync.test.ts && tsx tests/input-bounds.test.ts && tsx tests/rate-limits.test.ts && tsx tests/coffee-fortune.test.ts && tsx tests/dream-analysis.test.ts && tsx tests/ai-provider-parity.test.ts",
     "test:integration": "tsx tests/integration.test.ts",
     "preflight": "tsx scripts/preflight.ts"
   },

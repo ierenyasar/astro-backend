@@ -67,6 +67,8 @@ GET    /astrology/daily-scores      — günlük alan puanları (transit bazlı,
 POST   /readings/:category          — daily|love|career|money|weekly|monthly (cache'li, JWT gerekli)
 GET    /readings/today              — bugün ZATEN üretilmiş yorumlar (üretim tetiklemez)
 GET    /readings/history            — geçmiş yorumlar
+POST   /readings/coffee-fortune     — Türk kahvesi falı (görsel + AI, premium)
+GET    /readings/coffee-fortune/history — geçmiş fallar
 POST   /readings/:id/favorite       — yorumu favorile
 GET    /readings/favorites          — kaydedilen yorumlar
 POST   /ai/chat                     — Ask the Stars (conversation memory ile)
@@ -114,6 +116,56 @@ Doğum saati bilinmiyorsa:
 - Ay burcu öğlen 12:00 varsayımıyla hesaplanır ama gün içinde değişebileceği için `meta.moonUncertain: true` işaretlenir ve UI'da kullanıcıya belirtilir.
 
 `npx tsx tests/astrology.test.ts` ile 13 testin tamamı çalışır durumda.
+
+## Türk kahvesi falı
+
+`POST /readings/coffee-fortune` — kullanıcı 1-4 fincan fotoğrafını base64 dizisi olarak
+gönderir (geleneksel Türk kahve falında fincanın farklı açılardan incelenmesi yaygındır),
+Claude'un görsel (vision) desteğiyle yorumlanır. Free kullanıcı günde 1, premium günde 5
+hakka sahip (uyum analizinden bile daha sıkı bir tavan — hem görsel hem AI çağrısı en
+maliyetli kombinasyon).
+
+**Kritik tasarım kararları:**
+- **Görsel hiçbir zaman saklanmaz** — sadece üretilen yorum metni kaydedilir. Kullanıcının
+  kişisel bir fotoğrafını süresiz saklamanın gizlilik riski var, yorum fotoğraftan bağımsız
+  anlamlı.
+- **Geçersiz (fincan tanınmayan) denemeler de kotadan düşer** — AI çağrısı zaten yapılmış
+  ve maliyeti oluşmuştur; aksi halde sınırsız geçersiz deneme ile kota atlatılabilirdi.
+- **Fotoğraf sayısı 1-4 ile sınırlı**, her fotoğrafın kendi boyut sınırı var (~1.8MB,
+  jpeg/png/webp) — bu route'a özel daha yüksek bir `bodyLimit` tanımlı (global 256KB
+  yerine 11MB, 4 fotoğrafı + JSON overhead'i karşılayacak şekilde).
+- **Ayrı bir sistem prompt'u** (`COFFEE_SYSTEM_PROMPT`) kullanılıyor — astroloji prompt'undan
+  farklı bir gelenek, ama aynı güvenlik sınırları (ölüm/hastalık/kesinlik iddiası yok) korunuyor.
+- Model, görüntünün gerçekten telveli bir fincan olup olmadığını önce değerlendiriyor —
+  değilse fal uydurmuyor, nazikçe tekrar çekmesini istiyor.
+
+## Rüya analizi
+
+`POST /readings/dream-analysis` — kullanıcı rüyasını metin olarak anlatır (10-2000
+karakter), Claude geleneksel rüya sembolizmi + psikolojik bir bakışla yorumlar. Free
+kullanıcı günde 1, premium günde 10 hak (kahve falından daha ucuz — görsel yok, tek metin
+çağrısı).
+
+**Kritik tasarım kararları:**
+- **Kullanıcının rüya metni saklanır** (kahve falındaki fotoğrafın aksine) — metin, fotoğraf
+  gibi bir gizlilik hassasiyeti taşımıyor ve kullanıcının kendi geçmişini görebilmesi
+  anlamlı. Yine de uzunluğu sınırlı (madde 9/AI maliyet koruması).
+- **Girdi güvenlik kontrolü chat.ts'teki aynı desen** — kullanıcı rüya anlatımında kriz/
+  kendine zarar verme sinyali veriyorsa AI'ya hiç gidilmez, kotadan düşülmez.
+- **Ayrı bir sistem prompt'u** — rüya yorumunda özellikle "bu rüya hastalanacağının/
+  öleceğinin işareti" gibi korkutucu yorumlara kayma riski var; prompt bunu açıkça yasaklıyor.
+
+## Kota aşımı davranışı (ürün kararı)
+
+Kota aşımında dönen `upgradeRequired` bayrağı kullanıcının katmanına göre değişir:
+- **Free kullanıcı** limitine takıldıysa → `upgradeRequired: true` ve yükseltme mesajı.
+  "Yarın tekrar dene" demek hem yanıltıcı olurdu (hemen premium'a geçebilir) hem de
+  net bir dönüşüm kaybı.
+- **Premium kullanıcı** takıldıysa → `upgradeRequired: false`, gerçekten yarını beklemeli.
+
+Kahve falı ve rüya analizinde ayrı bir `enabled` bayrağı YOKTUR — erişim tamamen kota
+üzerinden yönetilir. (Her iki katmanda da `true` olan bir bayrak ölü kod olurdu; bu bir
+QA denetiminde tespit edilip kaldırıldı.)
 
 ## Kullanım limitleri (AI maliyet + abuse koruması)
 
@@ -241,6 +293,28 @@ Tüm bu alanlara `.max()` sınırı eklendi — isim 50, şehir 100, chat mesaj�
 E-posta özellikle önemliydi: Zod'un `.email()` formatı doğrular ama uzunluğu SINIRLAMAZ —
 `.max()` olmadan "a"×10000+"@x.com" geçerli bir e-posta gibi geçebilirdi. `tests/input-bounds.test.ts`
 bu sınırların route dosyalarında gerçekten var olduğunu ve Zod'un gerçekten reddettiğini doğrular.
+
+## AI sağlayıcı seçimi (önemli kısıt)
+
+> **AKTİF SAĞLAYICI: Gemini.** Tüm route'lar `src/lib/gemini.ts`'ten import eder.
+> Gerekli ortam değişkeni: `GEMINI_API_KEY` (aistudio.google.com/apikey — kart istemez).
+> Anthropic'e geri dönmek için 5 route dosyasında (`readings`, `chat`, `compatibility`,
+> `coffee`, `dream`) import satırını `../lib/anthropic` yap; başka değişiklik gerekmez.
+> `npm run preflight` aktif sağlayıcıyı koddan tespit edip doğru anahtarı kontrol eder.
+
+
+`src/lib/anthropic.ts` (varsayılan) ve `src/lib/gemini.ts` (ücretsiz katman alternatifi)
+**aynı dört fonksiyonu** dışa açar, bu yüzden geçiş sadece import satırı değiştirmekten ibarettir.
+
+**KRİTİK KISIT:** Kahve falı özelliği fotoğraf analiz eder (`generateVisionReading`).
+Yalnızca metin üreten sağlayıcılar (örn. Groq'un `gpt-oss-*` modelleri) bu özelliği
+**çalıştıramaz**. Gemini'nin "flash" modelleri doğal olarak çok-modludur, bu yüzden
+tek sağlayıcıyla hem metin hem görsel karşılanır.
+
+Birden fazla sağlayıcı kullanılacaksa (örn. metin için Groq + görsel için Gemini),
+`coffee.ts` mutlaka vision destekli olandan import etmelidir.
+`tests/ai-provider-parity.test.ts` bu eşleşmeyi kalıcı olarak doğrular — bir sağlayıcıda
+eksik fonksiyon kalırsa test kırılır.
 
 ## AI güvenlik katmanı
 

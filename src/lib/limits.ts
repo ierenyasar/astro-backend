@@ -14,6 +14,14 @@ export const FREE_LIMITS = {
   compatibilityEnabled: false,
   /** Free'de zaten kapalı; alan tutarlılık için burada duruyor */
   compatibilityPerDay: 0,
+  /**
+   * Kahve falı ve rüya analizi free'de de AÇIK, ama günde 1 hakla.
+   * Ayrı bir "enabled" bayrağı YOK — erişim tamamen kota üzerinden yönetiliyor.
+   * (compatibilityEnabled gibi bir bayrak burada ölü kod olurdu, çünkü her iki
+   * katmanda da true olurdu.)
+   */
+  coffeeFortunePerDay: 1,
+  dreamAnalysisPerDay: 1,
 };
 
 /** Premium kullanıcılar için de sınırsız değil — abuse/maliyet tavanı (madde 23). */
@@ -27,6 +35,18 @@ export const PREMIUM_LIMITS = {
    * maliyeti patlatabilirdi.
    */
   compatibilityPerDay: 15,
+  /**
+   * Uyum analizinden bile daha sıkı: her istek hem bir görsel (daha fazla token)
+   * hem AI çağrısı demek — en maliyetli özellik. Uyum analizi kadar sık
+   * kullanılması beklenmiyor (bir fincan kahve, günlük burç yorumu gibi
+   * tekrarlanan bir alışkanlık değil).
+   */
+  coffeeFortunePerDay: 5,
+  /**
+   * Metin tabanlı, görsel yok — kahve falından daha ucuz, uyum analiziyle
+   * benzer bir tavan makul (günlük yorum kadar sık değil ama sohbetten sınırlı).
+   */
+  dreamAnalysisPerDay: 10,
 };
 
 /**
@@ -87,6 +107,32 @@ export async function checkCompatibilityQuota(
     where: { userId, createdAt: { gte: startOfToday() } },
   });
   return { allowed: used < limits.compatibilityPerDay, used, limit: limits.compatibilityPerDay, premium };
+}
+
+/** Bugün üretilmiş Türk kahvesi falı sayısını kontrol eder. */
+export async function checkCoffeeFortuneQuota(
+  userId: string,
+  db: Prisma.TransactionClient = prisma
+): Promise<QuotaResult> {
+  const premium = await isPremium(userId, db);
+  const limits = premium ? PREMIUM_LIMITS : FREE_LIMITS;
+  const used = await db.coffeeFortune.count({
+    where: { userId, createdAt: { gte: startOfToday() } },
+  });
+  return { allowed: used < limits.coffeeFortunePerDay, used, limit: limits.coffeeFortunePerDay, premium };
+}
+
+/** Bugün üretilmiş rüya analizi sayısını kontrol eder. */
+export async function checkDreamAnalysisQuota(
+  userId: string,
+  db: Prisma.TransactionClient = prisma
+): Promise<QuotaResult> {
+  const premium = await isPremium(userId, db);
+  const limits = premium ? PREMIUM_LIMITS : FREE_LIMITS;
+  const used = await db.dreamAnalysis.count({
+    where: { userId, createdAt: { gte: startOfToday() } },
+  });
+  return { allowed: used < limits.dreamAnalysisPerDay, used, limit: limits.dreamAnalysisPerDay, premium };
 }
 
 /** Bugün gönderilmiş kullanıcı chat mesajı sayısını kontrol eder. */

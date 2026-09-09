@@ -33,6 +33,10 @@ export const EVENTS = {
   BIRTH_CHART_OPENED: "birth_chart_opened",
   COMPATIBILITY_STARTED: "compatibility_started",
   COMPATIBILITY_COMPLETED: "compatibility_completed",
+  COFFEE_FORTUNE_STARTED: "coffee_fortune_started",
+  COFFEE_FORTUNE_COMPLETED: "coffee_fortune_completed",
+  DREAM_ANALYSIS_STARTED: "dream_analysis_started",
+  DREAM_ANALYSIS_COMPLETED: "dream_analysis_completed",
 
   // para
   PAYWALL_VIEWED: "paywall_viewed",

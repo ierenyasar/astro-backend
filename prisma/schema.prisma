@@ -28,6 +28,8 @@ model User {
   subscriptions        Subscription[]
   notifications        Notification[]
   compatibilityChecks  CompatibilityCheck[]
+  coffeeFortunes       CoffeeFortune[]
+  dreamAnalyses        DreamAnalysis[]
   pushTokens           PushToken[]
   analyticsEvents      AnalyticsEvent[]
   passwordResetTokens  PasswordResetToken[]
@@ -206,6 +208,38 @@ model CompatibilityCheck {
   createdAt       DateTime @default(now())
 
   @@map("compatibility_checks")
+}
+
+/// Türk kahvesi falı sonuçları.
+///
+/// BİLİNÇLİ TASARIM: Yüklenen fincan fotoğrafı HİÇBİR ZAMAN saklanmaz — sadece
+/// üretilen yorum metni kaydedilir. Kullanıcının kişisel bir fotoğrafını
+/// süresiz saklamanın hem gizlilik riski hem gereksiz depolama maliyeti var;
+/// yorum zaten fotoğraftan bağımsız olarak anlamlı ve tekrar okunabilir.
+model CoffeeFortune {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interpretation Json
+  createdAt     DateTime @default(now())
+
+  @@map("coffee_fortunes")
+}
+
+/// Rüya analizi sonuçları.
+///
+/// Kahve falının aksine kullanıcının kendi yazdığı METİN saklanır (fotoğraf gibi
+/// hassasiyet taşımıyor, kullanıcının kendi geçmişini görebilmesi için anlamlı) —
+/// ama uzunluğu sınırlı (bkz. dream.ts route'undaki DREAM_TEXT_MAX_LENGTH).
+model DreamAnalysis {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dreamText      String
+  interpretation Json
+  createdAt      DateTime @default(now())
+
+  @@map("dream_analyses")
 }
 
 /// Şifre sıfırlama token'ları.

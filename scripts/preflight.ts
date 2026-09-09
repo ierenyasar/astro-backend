@@ -12,6 +12,8 @@
  */
 
 import "dotenv/config";
+import fs from "fs";
+import path from "path";
 
 type Level = "error" | "warn" | "ok" | "info";
 
@@ -27,6 +29,23 @@ const isProduction = process.env.NODE_ENV === "production";
 
 function add(level: Level, area: string, message: string, fix?: string) {
   findings.push({ level, area, message, fix });
+}
+
+
+/**
+ * Route dosyalarının hangi AI istemcisinden import ettiğine bakarak aktif
+ * sağlayıcıyı belirler. readings.ts referans alınır (her kurulumda mevcut).
+ */
+function activeProvider(): "anthropic" | "gemini" {
+  try {
+    const src = fs.readFileSync(
+      path.join(__dirname, "..", "src", "routes", "readings.ts"),
+      "utf8"
+    );
+    return /from "\.\.\/lib\/gemini"/.test(src) ? "gemini" : "anthropic";
+  } catch {
+    return "anthropic";
+  }
 }
 
 /* ------------------------------ zorunlu ayarlar ------------------------------ */
@@ -54,13 +73,31 @@ function checkCore() {
     add("ok", "Kimlik", "JWT_SECRET güçlü görünüyor.");
   }
 
-  const anthropic = process.env.ANTHROPIC_API_KEY;
-  if (!anthropic) {
-    add("error", "Yapay zekâ", "ANTHROPIC_API_KEY tanımlı değil — hiçbir yorum üretilemez.");
-  } else if (!anthropic.startsWith("sk-ant-")) {
-    add("warn", "Yapay zekâ", "ANTHROPIC_API_KEY beklenen biçimde değil (sk-ant- ile başlamalı).");
+  /**
+   * Hangi AI sağlayıcısının kullanıldığını KODDAN tespit ediyoruz, sabit
+   * kodlamıyoruz — sağlayıcı değiştirildiğinde (import satırı) bu denetim de
+   * otomatik doğru anahtarı kontrol eder. Aksi halde Gemini'ye geçildikten
+   * sonra preflight hâlâ Anthropic anahtarını arar ve yanlış rapor verir.
+   */
+  if (activeProvider() === "gemini") {
+    const gemini = process.env.GEMINI_API_KEY;
+    if (!gemini) {
+      add("error", "Yapay zekâ", "GEMINI_API_KEY tanımlı değil — hiçbir yorum üretilemez.");
+    } else {
+      add("ok", "Yapay zekâ", "GEMINI_API_KEY tanımlı (aktif sağlayıcı: Gemini).");
+    }
+    if (process.env.ANTHROPIC_API_KEY) {
+      add("info", "Yapay zekâ", "ANTHROPIC_API_KEY tanımlı ama kod Gemini kullanıyor — kullanılmıyor.");
+    }
   } else {
-    add("ok", "Yapay zekâ", "ANTHROPIC_API_KEY tanımlı.");
+    const anthropic = process.env.ANTHROPIC_API_KEY;
+    if (!anthropic) {
+      add("error", "Yapay zekâ", "ANTHROPIC_API_KEY tanımlı değil — hiçbir yorum üretilemez.");
+    } else if (!anthropic.startsWith("sk-ant-")) {
+      add("warn", "Yapay zekâ", "ANTHROPIC_API_KEY beklenen biçimde değil (sk-ant- ile başlamalı).");
+    } else {
+      add("ok", "Yapay zekâ", "ANTHROPIC_API_KEY tanımlı (aktif sağlayıcı: Anthropic).");
+    }
   }
 
   const cors = process.env.CORS_ORIGIN;
@@ -199,8 +236,26 @@ async function checkConnectivity() {
     }
   }
 
-  // Anthropic
-  if (process.env.ANTHROPIC_API_KEY) {
+  // Gemini (aktif sağlayıcıysa)
+  if (activeProvider() === "gemini" && process.env.GEMINI_API_KEY) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`
+      );
+      if (res.status === 400 || res.status === 403) {
+        add("error", "Bağlantı", "Gemini API anahtarı reddedildi.");
+      } else if (res.ok) {
+        add("ok", "Bağlantı", "Gemini API'ye ulaşıldı.");
+      } else {
+        add("warn", "Bağlantı", `Gemini beklenmeyen yanıt: ${res.status}`);
+      }
+    } catch (err: any) {
+      add("warn", "Bağlantı", `Gemini'ye ulaşılamadı: ${err?.message?.slice(0, 80)}`);
+    }
+  }
+
+  // Anthropic (aktif sağlayıcıysa)
+  if (activeProvider() === "anthropic" && process.env.ANTHROPIC_API_KEY) {
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",

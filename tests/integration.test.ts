@@ -70,6 +70,8 @@ async function cleanup() {
   await prisma.profile.deleteMany({});
   await prisma.subscription.deleteMany({});
   await prisma.compatibilityCheck.deleteMany({});
+  await prisma.coffeeFortune.deleteMany({});
+  await prisma.dreamAnalysis.deleteMany({});
   await prisma.user.deleteMany({});
 }
 
@@ -596,6 +598,14 @@ async function main() {
     const userB = await prisma.profile.findFirst({ where: { firstName: "Burak" } });
     const userId = userB!.userId;
 
+    // Silme öncesi bir kahve falı ve bir rüya analizi kaydı ekle — cascade'in bunları da temizlediğini doğrula
+    await prisma.coffeeFortune.create({
+      data: { userId, interpretation: { valid: true, interpretation: "test" } },
+    });
+    await prisma.dreamAnalysis.create({
+      data: { userId, dreamText: "test rüyası", interpretation: { interpretation: "test" } },
+    });
+
     const res = await authed(tokenB, { method: "DELETE", url: "/user/account" });
     assert(res.statusCode === 200, `beklenen 200, gelen ${res.statusCode}`);
 
@@ -605,6 +615,8 @@ async function main() {
       prisma.birthData.count({ where: { userId } }),
       prisma.chatSession.count({ where: { userId } }),
       prisma.reading.count({ where: { userId } }),
+      prisma.coffeeFortune.count({ where: { userId } }),
+      prisma.dreamAnalysis.count({ where: { userId } }),
     ]);
     assert(
       leftovers.every((n) => n === 0),

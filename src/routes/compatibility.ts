@@ -2,7 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireAuth, AuthPayload } from "../middleware/auth";
-import { generateFreeTextReply } from "../lib/anthropic";
+import { generateFreeTextReply } from "../lib/gemini";
 import { compatibilityPrompt } from "../prompts";
 import { computeChart, computeSynastry, signByName, GeocodingError } from "../lib/astrology";
 import { checkAiOutput } from "../lib/safety";

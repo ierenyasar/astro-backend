@@ -2,7 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireAuth, AuthPayload } from "../middleware/auth";
-import { generateFreeTextReply, summarizeConversation } from "../lib/anthropic";
+import { generateFreeTextReply, summarizeConversation } from "../lib/gemini";
 import { checkChatQuota } from "../lib/limits";
 import { chatPrompt } from "../prompts";
 import { checkUserMessage, checkAiOutput, countCliches } from "../lib/safety";
